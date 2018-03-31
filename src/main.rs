@@ -105,7 +105,13 @@ fn main() {
     // This returns a `vulkano_win::Window` object that contains both a cross-platform winit
     // window and a cross-platform Vulkan surface that represents the surface of the window.
     let mut events_loop = winit::EventsLoop::new();
-    let window = winit::WindowBuilder::new().build_vk_surface(&events_loop, instance.clone()).unwrap();
+    let window = winit::WindowBuilder::new()
+        .with_title("NINJADEV")
+        .with_dimensions(1280, 720)
+        .with_min_dimensions(1280, 720)
+        .with_max_dimensions(1280, 720)
+        .build_vk_surface(&events_loop, instance.clone())
+        .unwrap();
 
     // Get the dimensions of the viewport. These variables need to be mutable since the viewport
     // can change size.
@@ -198,9 +204,12 @@ fn main() {
         impl_vertex!(Vertex, position);
 
         CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::all(), [
-            Vertex { position: [-0.5, -0.25] },
-            Vertex { position: [0.0, 0.5] },
-            Vertex { position: [0.25, -0.1] }
+            Vertex { position: [-1.0, -1.0] },
+            Vertex { position: [1.0, -1.0] },
+            Vertex { position: [-1.0, 1.0] },
+            Vertex { position: [-1.0, 1.0] },
+            Vertex { position: [1.0, -1.0] },
+            Vertex { position: [1.0, 1.0] },
         ].iter().cloned()).expect("failed to create buffer")
     };
 
@@ -216,8 +225,10 @@ fn main() {
 #version 450
 
 layout(location = 0) in vec2 position;
+layout(location = 1) out vec2 vuv;
 
 void main() {
+    vuv = position;
     gl_Position = vec4(position, 0.0, 1.0);
 }
 "]
@@ -227,16 +238,8 @@ void main() {
     mod fs {
         #[derive(VulkanoShader)]
         #[ty = "fragment"]
-        #[src = "
-#version 450
-
-layout(location = 0) out vec4 f_color;
-
-void main() {
-    f_color = vec4(1.0, 0.0, 0.0, 1.0);
-}
-"]
-        struct Dummy;
+        #[path = "src/shaders/fragment.glsl"]
+        struct Dummmy;
     }
 
     let vs = vs::Shader::load(device.clone()).expect("failed to create shader module");
