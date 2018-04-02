@@ -104,7 +104,7 @@ fn main() {
     // This returns a `vulkano_win::Window` object that contains both a cross-platform winit
     // window and a cross-platform Vulkan surface that represents the surface of the window.
     let mut events_loop = winit::EventsLoop::new();
-    let window = winit::WindowBuilder::new()
+    let surface = winit::WindowBuilder::new()
         .with_title("NINJADEV")
         .with_dimensions(1280, 720)
         .with_min_dimensions(1280, 720)
@@ -114,10 +114,8 @@ fn main() {
 
     // Get the dimensions of the viewport. These variables need to be mutable since the viewport
     // can change size.
-    let (width, height) = window.window().get_inner_size().unwrap();
-    let mut dimensions = {
-        [width, height]
-    };
+    let (width, height) = surface.window().get_inner_size().unwrap();
+    let mut dimensions = [width, height];
 
     // The next step is to choose which GPU queue will execute our draw commands.
     //
@@ -131,7 +129,7 @@ fn main() {
     // We have to choose which queues to use early on, because we will need this info very soon.
     let queue = physical.queue_families().find(|&q| {
         // We take the first queue that supports drawing to our window.
-        q.supports_graphics() && window.is_supported(q).unwrap_or(false)
+        q.supports_graphics() && surface.is_supported(q).unwrap_or(false)
     }).expect("couldn't find a graphical queue family");
 
     // Now initializing the device. This is probably the most important object of Vulkan.
@@ -174,7 +172,7 @@ fn main() {
     let (mut swapchain, mut images) = {
         // Querying the capabilities of the surface. When we create the swapchain we can only
         // pass values that are allowed by the capabilities.
-        let caps = window.capabilities(physical)
+        let caps = surface.capabilities(physical)
             .expect("failed to get surface capabilities");
 
         // We choose the dimensions of the swapchain to match the current dimensions of the window.
@@ -190,7 +188,7 @@ fn main() {
         let format = caps.supported_formats[0].0;
 
         // Please take a look at the docs for the meaning of the parameters we didn't mention.
-        Swapchain::new(device.clone(), window.clone(), caps.min_image_count, format,
+        Swapchain::new(device.clone(), surface.clone(), caps.min_image_count, format,
                        dimensions, 1, caps.supported_usage_flags, &queue,
                        SurfaceTransform::Identity, alpha, PresentMode::Fifo, true,
                        None).expect("failed to create swapchain")
@@ -240,6 +238,8 @@ void main() {
         #[path = "src/shaders/fragment.glsl"]
         struct Dummmy;
     }
+
+    let uniform_buffer = vulkano::buffer::cpu_pool::CpuBufferPool::new(device.clone(), vulkano::buffer::BufferUsage::all());
 
     let vs = vs::Shader::load(device.clone()).expect("failed to create shader module");
     let fs = fs::Shader::load(device.clone()).expect("failed to create shader module");
@@ -331,6 +331,8 @@ void main() {
     // that, we store the submission of the previous frame here.
     let mut previous_frame_end = Box::new(now(device.clone())) as Box<GpuFuture>;
 
+    let mut current_frame = 0.0;
+
     loop {
         // It is important to call this function from time to time, otherwise resources will keep
         // accumulating and you will eventually reach an out of memory error.
@@ -342,7 +344,7 @@ void main() {
         if recreate_swapchain {
             // Get the new dimensions for the viewport/framebuffers.
             dimensions = {
-                let (new_width, new_height) = window.window().get_inner_size().unwrap();
+                let (new_width, new_height) = surface.window().get_inner_size().unwrap();
                 [new_width, new_height]
             };
 
@@ -374,6 +376,16 @@ void main() {
             }).collect::<Vec<_>>());
             mem::replace(&mut framebuffers, new_framebuffers);
         }
+
+        let uniform_buffer_for_this_frame = uniform_buffer.next(fs::ty::Data {
+            time: current_frame,
+        }).expect("No more uniform buffers free in the ring buffer :(");
+
+        let set = Arc::new(
+            vulkano::descriptor::descriptor_set::PersistentDescriptorSet::start(pipeline.clone(), 0).add_buffer(uniform_buffer_for_this_frame).unwrap().build().unwrap()
+        );
+
+        current_frame += 1.0;
 
         // Before we can draw on the output, we have to *acquire* an image from the swapchain. If
         // no image is available (which happens if you submit draw commands too quickly), then the
@@ -428,7 +440,7 @@ void main() {
                       }]),
                       scissors: None,
                   },
-                  vertex_buffer.clone(), (), ())
+                  vertex_buffer.clone(), set.clone(), ())
             .unwrap()
 
             // We leave the render pass by calling `draw_end`. Note that if we had multiple

@@ -2,6 +2,9 @@
 
 layout(location = 0) out vec4 f_color;
 layout(location = 1) in vec2 vuv;
+layout(set = 0, binding = 0) uniform Data {
+    float time;
+} uniforms;
 
 const int depth = 256;
 
@@ -34,7 +37,7 @@ void main() {
 
     //float zoom = pow(2.0, -time) * 3.5;
     //vec2 c = zoomCoordinate + uv * zoom;
-    vec2 c = vec2(uv.x - 0.5, uv.y);
+    vec2 c = vec2(uv.x - mod(uniforms.time / 30.0, 2.0), uv.y);
 
     float mandel = mandelbrot(c);
     f_color = vec4(mandel, 0.0, 0.0, 1.0);
