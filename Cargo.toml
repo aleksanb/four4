@@ -15,6 +15,7 @@ time = "0.1.37"
 
 [profile.release]
 panic = "abort"
-#lto = true
-#codegen-units = 1
-#incremental = false
+lto = true
+codegen-units = 1
+incremental = false
+opt-level = "z"

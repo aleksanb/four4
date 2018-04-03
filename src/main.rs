@@ -1,3 +1,6 @@
+#![feature(global_allocator)]
+#![feature(allocator_api)]
+
 #[macro_use]
 extern crate vulkano;
 #[macro_use]
@@ -28,6 +31,11 @@ use vulkano::sync::GpuFuture;
 
 use std::sync::Arc;
 use std::mem;
+
+use std::heap::System;
+
+#[global_allocator]
+static GLOBAL: System = System;
 
 fn main() {
     let instance = {
@@ -214,7 +222,12 @@ fn main() {
     // that, we store the submission of the previous frame here.
     let mut previous_frame_end = Box::new(now(device.clone())) as Box<GpuFuture>;
 
-    let mut current_frame = 0.0;
+    const FRAMES_PER_SECOND: f64 = 60.0;
+    const FRAME_LENGTH: f64 = 1000. / FRAMES_PER_SECOND;
+    //const FRAME_LENGTH_MILLIS: std::time::Duration = std::time::Duration::from_millis(1 / FRAME_LENGTH);
+    let mut time = std::time::Instant::now();
+    let mut accumulated_time_error = 0.0;//std::time::Duration::default();
+    let mut current_frame = 0;
 
     loop {
         // It is important to call this function from time to time, otherwise resources will keep
@@ -260,15 +273,28 @@ fn main() {
             mem::replace(&mut framebuffers, new_framebuffers);
         }
 
+        let time_now = std::time::Instant::now();
+        let time_elapsed = time_now - time;
+        let delta_ms = (time_elapsed.as_secs() * 1000 + time_elapsed.subsec_nanos() as u64 / 1_000_000) as f64;
+        accumulated_time_error += delta_ms;
+        time = time_now;
+
+        while accumulated_time_error >= FRAME_LENGTH {
+            // Add whatever update logic you need here
+
+            accumulated_time_error -= FRAME_LENGTH;
+            current_frame += 1;
+        }
+
+
         let uniform_buffer_for_this_frame = uniform_buffer.next(fragment_shader::ty::Data {
-            time: current_frame,
+            frame: current_frame as f32,
         }).expect("No more uniform buffers free in the ring buffer :(");
 
         let set = Arc::new(
             vulkano::descriptor::descriptor_set::PersistentDescriptorSet::start(pipeline.clone(), 0).add_buffer(uniform_buffer_for_this_frame).unwrap().build().unwrap()
         );
 
-        current_frame += 1.0;
 
         let (image_num, acquire_future) = match swapchain::acquire_next_image(swapchain.clone(),
                                                                               None) {
