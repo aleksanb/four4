@@ -1,5 +1,5 @@
-#![feature(global_allocator)]
-#![feature(allocator_api)]
+//#![feature(global_allocator)]
+//#![feature(allocator_api)]
 
 #[macro_use]
 extern crate vulkano;
@@ -32,10 +32,10 @@ use vulkano::sync::GpuFuture;
 use std::sync::Arc;
 use std::mem;
 
-use std::heap::System;
+//use std::heap::System;
 
-#[global_allocator]
-static GLOBAL: System = System;
+//#[global_allocator]
+//static GLOBAL: System = System;
 
 fn main() {
     let instance = {
