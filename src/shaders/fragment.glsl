@@ -6,39 +6,42 @@ layout(set = 0, binding = 0) uniform Data {
     float frame;
 } uniforms;
 
-const int depth = 256;
-
-vec2 complexMult(vec2 a, vec2 b)
-{
-    float real = a.x * b.x - a.y * b.y;
-    float complex = a.y * b.x + a.x * b.y;
-    return vec2(real, complex);
+// Combination operators
+float op_union(float d1, float d2) {
+    return min(d1, d2);
 }
 
-float mandelbrot(vec2 c)
-{
-    vec2 z = vec2(0.0, 0.0);
-
-    int depth_reached = depth;
-    for (int i=0; i<depth; i++) {
-        if (dot(z, z) > 4.0) {
-            depth_reached = i;
-            break;
-        }
-        z = complexMult(z, z) + c;
-    }
-
-    return 1.0 - float(depth - depth_reached) / float(depth);
+float op_subtract(float d1, float d2) {
+    return max(-d1, d2);
 }
 
+float intersection(float d1, float d2) {
+    return max(d1, d2);
+}
+
+// Geometric shapes
 float sphere(vec3 position, vec3 sphere_center, float radius) {
     return length(position - sphere_center) - radius;
 }
 
-float distance(vec3 point) {
-    float s = sphere(point, vec3(0.0), 3.0);
+float torus(vec3 point, vec2 torus) {
+  vec2 q = vec2(length(point.xz) - torus.x, point.y);
+  return length(q) - torus.y;
+}
 
-    return s;
+float box(vec3 point, vec3 box) {
+  return length(max(abs(point) - box, 0.0));
+}
+
+float distance(vec3 point) {
+    float s1 = sphere(point, vec3(5.0, 0.0, 0.0), 3.0);
+    float s2 = sphere(point, vec3(-5.0, 0.0, 0.0), 3.0);
+    float s3 = sphere(point, vec3(0.0, 5.0, 0.0), 3.0);
+
+    return op_union(op_union(s1, s2), s3);
+    //float s = box(point, vec3(3.0, 1.0, 1.0));
+    //float deform = sin(2.0 * point.x) * sin(20. * point.y) * sin(2.0 * point.y);
+    //return s + deform;
 }
 
 vec3 calculate_normal(vec3 position) {
@@ -78,51 +81,45 @@ vec2 cast_ray(vec3 ray_origin, vec3 ray_direction) {
 void main() {
     vec2 uv = vec2(vuv.x * 16.0 - 8.0, vuv.y * 9.0 - 4.5);
 
-    vec3 forward = vec3(0.0, 0.0, -1.0);
-    vec3 up = vec3(0.0, 1.0, 0.0);
-    vec3 right = cross(forward, up);
+    vec3 screen_space_up = vec3(0.0, 1.0, 0.0);
+    vec3 camera_position = vec3(
+        10.0 + sin(uniforms.frame / 60.0) * 10.0,
+        10.0 + cos(uniforms.frame / 60.0) * 10.0,
+        10.0 + sin(uniforms.frame / 60.0) * 10.0
+    );
+    vec3 camera_look_at_position = vec3(0.0, 0.0, 0.0);
+    vec3 camera_forward = normalize(camera_look_at_position - camera_position);
+    vec3 camera_right = cross(camera_forward, screen_space_up);
+    vec3 camera_up  = cross(camera_right, camera_forward);
 
-    const float fov = 75.0;
-    const float fov_radians = (fov / 180) * 3.141592;
-    const float distance_to_virtual_screen = 8.0 / fov_radians;
+    float fov = 75.0;
+    float fov_radians = (fov / 180) * 3.141592;
+    float distance_to_virtual_screen = 8.0 / fov_radians;
 
-    vec3 eye = vec3(sin(uniforms.frame / 60.0) * 2.0, 0.0, 10.0) - forward * distance_to_virtual_screen;
+    camera_position -= camera_forward * distance_to_virtual_screen;
+    vec3 intersection_point_with_virtual_screen =  camera_position + camera_right * uv.x + camera_up * uv.y + camera_forward * distance_to_virtual_screen;
+    vec3 ray_direction = normalize(intersection_point_with_virtual_screen - camera_position);
 
-    vec3 ray_origin = eye + right * uv.x + up * uv.y + forward * distance_to_virtual_screen;
-    vec3 ray_destination = normalize(ray_origin - eye);
-
-    vec2 result = cast_ray(ray_origin, ray_destination);
+    vec2 result = cast_ray(camera_position, ray_direction);
     float distance = result.x;
     float material = result.y;
 
     vec3 light = normalize(vec3(5.0));
 
+    vec4 fog = vec4(0.5, 0.6, 0.7, 1.0);
     vec4 color = vec4(1.0, 0.5, 0.1, 1.0);
     if (material > 0.0) {
-        vec3 intersection_point = ray_origin + forward * distance;
+        vec3 intersection_point = camera_position + ray_direction * distance;
         vec3 surface_normal = calculate_normal(intersection_point);
         float diffusion = 1.5 * clamp(dot(surface_normal, light), 0.0, 1.0);
 
         color += diffusion * vec4(0.9, 0.5, 0.5, 1.0);
+
+        float mixer =  1.0 - exp(-distance * 0.07);
+        color = mix(color, fog, mixer);
     } else {
-        color = vec4(vec3(0.0), 1.0);
+        color = fog;
     }
 
-    vec4 fog = vec4(0.5, 0.6, 0.7, 1.0);
-    float mixer =  1.0 - exp(-distance * 0.07);
-    color = mix(color, fog, mixer);
-
     f_color = color;
-}
-
-void old_main() {
-    vec2 uv = vec2(vuv.x * 16.0 / 9.0, vuv.y);
-    //vec2 uv = vec2(vuv.x * 3.5 - 2.5, vuv.y * 2.0 - 1.0);
-
-    //float zoom = pow(2.0, -time) * 3.5;
-    //vec2 c = zoomCoordinate + uv * zoom;
-    vec2 c = uv + vec2(sin(uniforms.frame / 60.0), cos(uniforms.frame / 60.0));
-
-    float mandel = mandelbrot(c);
-    f_color = vec4(mandel, 0.0, 0.0, 1.0);
 }
